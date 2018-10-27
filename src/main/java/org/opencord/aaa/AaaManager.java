@@ -18,16 +18,22 @@ package org.opencord.aaa;
 import static org.onosproject.net.config.basics.SubjectFactories.APP_SUBJECT_FACTORY;
 import static org.slf4j.LoggerFactory.getLogger;
 
+import java.io.File;
+import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.Map;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.felix.scr.annotations.Component;
 import org.apache.felix.scr.annotations.Deactivate;
 import org.apache.felix.scr.annotations.Reference;
 import org.apache.felix.scr.annotations.ReferenceCardinality;
 import org.apache.felix.scr.annotations.Service;
+import org.glassfish.jersey.client.ClientConfig;
+import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
 import org.onlab.packet.DeserializationException;
 import org.onlab.packet.EAP;
 import org.onlab.packet.EAPOL;
@@ -61,6 +67,13 @@ import org.onosproject.net.packet.PacketService;
 import org.opencord.sadis.SubscriberAndDeviceInformationService;
 import org.osgi.service.component.annotations.Activate;
 import org.slf4j.Logger;
+
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 
 /**
  * AAA application for ONOS.
@@ -314,6 +327,19 @@ public class AaaManager
                         eapPayload, stateMachine.priorityCode());
                 log.info("Send EAP success message to supplicant {}", stateMachine.supplicantAddress().toString());
                 sendPacketToSupplicant(eth, stateMachine.supplicantConnectpoint());
+
+                log.info("Starting E-line !!!");
+                /* read eline json*/
+                ObjectMapper mapper = new ObjectMapper();
+                File from = new File("/home/nate/e-line.json");
+                JsonNode read = null;
+                try {
+                    read = mapper.readTree(from);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                log.info(prettyPrintJsonString(read));
+                postToEline(read);
 
                 stateMachine.authorizeAccess();
 
@@ -670,5 +696,32 @@ public class AaaManager
                     return;
             }
         }
+    }
+
+    public String prettyPrintJsonString(JsonNode jsonNode) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            Object json = mapper.readValue(jsonNode.toString(), Object.class);
+            return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(json);
+        } catch (Exception e) {
+            return "Sorry, pretty print didn't work";
+        }
+    }
+
+    public void postToEline(JsonNode json) {
+        // Setup credentials
+        HttpAuthenticationFeature feature = HttpAuthenticationFeature.basicBuilder()
+                .nonPreemptive()
+                .credentials("onos", "rocks")
+                .build();
+        ClientConfig cfg = new ClientConfig();
+        cfg.register(feature);
+        Client client = ClientBuilder.newClient(cfg);
+
+        // Build URL and perform post
+        WebTarget target = client.target("http://" + "127.0.0.1" + ":" + "8181" + "/onos/hello/elines");
+        Response response = target.request().post(Entity.entity(json.toString(), MediaType.APPLICATION_JSON_TYPE));
+        log.info("Response: " + response.getStatus() + "-" + response.readEntity(String.class));
+        response.close();
     }
 }
