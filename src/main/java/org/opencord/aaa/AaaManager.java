@@ -18,8 +18,10 @@ package org.opencord.aaa;
 import static org.onosproject.net.config.basics.SubjectFactories.APP_SUBJECT_FACTORY;
 import static org.slf4j.LoggerFactory.getLogger;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.Map;
@@ -67,6 +69,7 @@ import org.onosproject.net.packet.PacketService;
 import org.opencord.sadis.SubscriberAndDeviceInformationService;
 import org.osgi.service.component.annotations.Activate;
 import org.slf4j.Logger;
+
 
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
@@ -330,16 +333,21 @@ public class AaaManager
 
                 log.info("Starting E-line !!!");
                 /* read eline json*/
-                ObjectMapper mapper = new ObjectMapper();
-                File from = new File("/home/nate/e-line.json");
-                JsonNode read = null;
+
                 try {
-                    read = mapper.readTree(from);
+                    postToEline(readElineFile());
                 } catch (IOException e) {
                     e.printStackTrace();
+                    log.info("io exception:338");
                 }
-                log.info(prettyPrintJsonString(read));
-                postToEline(read);
+
+                log.info("bring up vsg");
+                try {
+                    postToXosvSG();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                    log.info("io exception:349");
+                }
 
                 stateMachine.authorizeAccess();
 
@@ -708,6 +716,14 @@ public class AaaManager
         }
     }
 
+    public JsonNode readElineFile() throws IOException {
+        ObjectMapper mapper = new ObjectMapper();
+        File from = new File("/root/onos/e-line.json");
+        JsonNode read = mapper.readTree(from);
+        log.info(prettyPrintJsonString(read));
+        return read;
+    }
+
     public void postToEline(JsonNode json) {
         // Setup credentials
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.basicBuilder()
@@ -723,5 +739,20 @@ public class AaaManager
         Response response = target.request().post(Entity.entity(json.toString(), MediaType.APPLICATION_JSON_TYPE));
         log.info("Response: " + response.getStatus() + "-" + response.readEntity(String.class));
         response.close();
+    }
+
+    public void postToXosvSG() throws IOException {
+        String file = "/root/onos/vsgshell.sh";
+        File shellscriptfile = new File(file);
+        ProcessBuilder pb = new ProcessBuilder(String.valueOf(shellscriptfile));
+        //pb.directory(new File("/root/onos"));
+
+            Process p = pb.start();
+            BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line;
+            while ((line = br.readLine()) != null) {
+                log.info(line);
+            }
+
     }
 }
